@@ -24,10 +24,12 @@ Roughly, and how you split it.
 
 ## Baseline defects found
 
-| # | Defect | Where | Fixed / left / out of scope |
-| --- | --- | --- | --- |
-| 1 | Bulk update sends >50 ids in one call | `App.tsx` | |
-| 2 | | | |
+| #   | Defect                                | Where         | Fixed / left / out of scope |
+| --- | ------------------------------------- | ------------- | --------------------------- |
+| 1   | Bulk update sends >50 ids in one call | App.tsx       | Fixed                       |
+| 2   | Api call on each key Stroke           | App.tsx       | Fixed                       |
+| 3   | Search gives invalid response         | App.tsx       | Fixed                       |
+| 4   | Checkbox Selection rendered each row  | AssetGrid.tsx | Fixed                       |
 
 ---
 
@@ -54,13 +56,13 @@ six of these is about right.
 
 Fill in real measurements, not estimates. Say which machine and browser.
 
-| Metric | Before | After | How measured |
-| --- | --- | --- | --- |
-| Rendered DOM nodes at 5,000 rows loaded | | | |
-| Cards re-rendered when toggling one selection | | | |
-| Longest task during sustained scroll | | | |
-| Requests fired while typing a 6-character query | | | |
-| Production bundle, gzipped | | | |
+| Metric                                          | Before | After | How measured            |
+| ----------------------------------------------- | ------ | ----- | ----------------------- |
+| Rendered DOM nodes at 5,000 rows loaded         |        |       |                         |
+| Cards re-rendered when toggling one selection   |        |       | React DevTools Profiler |
+| Longest task during sustained scroll            |        |       |                         |
+| Requests fired while typing a 6-character query |        |       |                         |
+| Production bundle, gzipped                      |        |       |                         |
 
 What was the actual bottleneck, and how did you find it?
 

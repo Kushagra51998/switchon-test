@@ -1,9 +1,14 @@
-import { useEffect, useState } from 'react';
-import { getAsset, thumbnailUrl, updateAsset } from '@/api/client';
-import { formatBytes, formatDate, formatDuration, statusLabel } from '@/lib/format';
-import type { Asset, AssetStatus } from '@/lib/types';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getAsset, thumbnailUrl, updateAsset } from "@/api/client";
+import {
+  formatBytes,
+  formatDate,
+  formatDuration,
+  statusLabel,
+} from "@/lib/format";
+import type { Asset, AssetStatus } from "@/lib/types";
 
-const STATUSES: AssetStatus[] = ['draft', 'in_review', 'approved', 'archived'];
+const STATUSES: AssetStatus[] = ["draft", "in_review", "approved", "archived"];
 
 interface Props {
   id: string;
@@ -19,39 +24,101 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
   const [asset, setAsset] = useState<Asset | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Tracks the latest save operation.
+  const saveRequestId = useRef(0);
 
   useEffect(() => {
     setAsset(null);
     setError(null);
+    setLoading(true);
     getAsset(id)
       .then(setAsset)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Load failed'));
+      .catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : "Load failed"),
+      )
+      .finally(() => setLoading(false));
   }, [id]);
 
-  async function setStatus(status: AssetStatus) {
-    if (!asset) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const updated = await updateAsset(asset.id, asset.version, { status });
-      setAsset(updated);
-      onSaved(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
-    } finally {
-      setSaving(false);
-    }
-  }
+  const setStatus = useCallback(
+    async (status: AssetStatus) => {
+      if (!asset || saving || status === asset.status) {
+        return;
+      }
+
+      const previousAsset = asset;
+      const requestId = ++saveRequestId.current;
+
+      setError(null);
+
+      // Optimistic update: update UI immediately.
+      const optimisticAsset: Asset = {
+        ...previousAsset,
+        status,
+      };
+
+      setAsset(optimisticAsset);
+      setSaving(true);
+
+      try {
+        const updated = await updateAsset(
+          previousAsset.id,
+          previousAsset.version,
+          { status },
+        );
+
+        // Ignore stale save responses.
+        if (requestId !== saveRequestId.current) {
+          return;
+        }
+
+        // Replace optimistic data with server response.
+        setAsset(updated);
+        onSaved(updated);
+      } catch (err: unknown) {
+        if (requestId !== saveRequestId.current) {
+          return;
+        }
+
+        // Rollback if the API request fails.
+        setAsset(previousAsset);
+
+        setError(err instanceof Error ? err.message : "Save failed");
+      } finally {
+        if (requestId === saveRequestId.current) {
+          setSaving(false);
+        }
+      }
+    },
+    [asset, saving, onSaved],
+  );
 
   return (
     <aside className="panel">
       <div className="panel__head">
         <h2>Asset detail</h2>
+
         <button onClick={onClose}>Close</button>
       </div>
 
-      {error && <p className="error">{error}</p>}
-      {!asset && !error && <p className="muted">Loading…</p>}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+
+      {loading && <p className="muted">Loading…</p>}
+
+      {!loading && !asset && !error && (
+        <p className="muted">Asset not found.</p>
+      )}
+
+      {saving && (
+        <p className="muted" role="status">
+          Saving…
+        </p>
+      )}
 
       {asset && (
         <div className="panel__body">
@@ -64,7 +131,7 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
             <dd>{asset.kind}</dd>
             <dt>Size</dt>
             <dd>{formatBytes(asset.sizeBytes)}</dd>
-            {asset.width && (
+            {asset.width != null && asset.height != null && (
               <>
                 <dt>Dimensions</dt>
                 <dd>
@@ -72,7 +139,7 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
                 </dd>
               </>
             )}
-            {asset.durationSec && (
+            {asset.durationSec != null && (
               <>
                 <dt>Duration</dt>
                 <dd>{formatDuration(asset.durationSec)}</dd>
@@ -101,6 +168,7 @@ export function AssetDetail({ id, onClose, onSaved }: Props) {
                 key={status}
                 disabled={saving || status === asset.status}
                 onClick={() => setStatus(status)}
+                aria-pressed={status === asset.status}
               >
                 {statusLabel(status)}
               </button>

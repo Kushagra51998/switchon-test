@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { bulkSetStatus } from "@/api/client";
 import { AssetDetail } from "@/features/assets/AssetDetail";
 import { AssetGrid } from "@/features/assets/AssetGrid";
@@ -6,6 +6,8 @@ import { useAssets } from "@/features/assets/useAssets";
 import { statusLabel } from "@/lib/format";
 import type { Asset, AssetStatus, AssetQuery } from "@/lib/types";
 import { useDebouncedValue } from "./hooks/useDebounce";
+import { CreateChunks } from "./utils/bulkStatusBatching";
+import { mergeBatchResponses } from "./utils/mergeBatchResponse";
 
 const STATUSES: AssetStatus[] = ["draft", "in_review", "approved", "archived"];
 const SORTS: Array<{ value: NonNullable<AssetQuery["sort"]>; label: string }> =
@@ -36,23 +38,41 @@ export function App() {
     limit: 24,
   });
 
-  function toggleSelect(id: string) {
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+
       return next;
     });
-  }
+  }, []);
 
   async function applyBulkStatus(next: AssetStatus) {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
+    // Created Chunks
+    const chunksArray = CreateChunks(ids, 50);
+
     setNotice(null);
     try {
       // Sends every selected id in one call, which the API refuses above 50.
-      const result = await bulkSetStatus(ids, next);
-      setNotice(`${result.applied} updated, ${result.failed} failed.`);
+
+      // Made the call parallelly with all the batches
+      const result = await Promise.all(
+        chunksArray.map((chunk) => bulkSetStatus(chunk, next)),
+      );
+
+      // Created a utility funtion to merge the batch response
+      const formattedResponse = mergeBatchResponses(result);
+
+      setNotice(
+        `${formattedResponse.applied} updated, ${formattedResponse.failed} failed.`,
+      );
       setSelectedIds(new Set());
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Bulk update failed");
